@@ -13,17 +13,13 @@ cd codenames-ai-client
 python -m venv venv
 source venv/bin/activate  
 ```
-If you prefer, you can set up a Conda environment.
+If you prefer, you can set up a Conda environment. Python 3.11 is recommended.
 
 3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Run the example AI:
-```bash
-python examples/simple_ai.py
-```
 ## Project Structure
 ```text
 codenames-ai-client/
