@@ -27,7 +27,7 @@ curl -L -o ~/Downloads/googlenewsvectorsnegative300.zip\
   https://www.kaggle.com/api/v1/datasets/download/leadbest/googlenewsvectorsnegative300
 unzip ~/Downloads/googlenewsvectorsnegative300.zip
 ```
-2. Move `GoogleNews-vectors-negative300.bin` to `/client` folder
+2. Move `GoogleNews-vectors-negative300.bin` to the main project folder
 
 You can delete `GoogleNews-vectors-negative300.bin.gz`
 
