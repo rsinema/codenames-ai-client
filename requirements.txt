@@ -1,5 +1,5 @@
 requests
-python-socketio
 gensim
 nltk
 numpy
+python-socketio[client]

@@ -1,13 +1,11 @@
 from collections import defaultdict
 from itertools import chain, combinations
 from random import choice
-from re import sub
 from sys import argv
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-import gensim
-import gensim.downloader as api
-import nltk
 import numpy as np
+from gensim.models import KeyedVectors
 from nltk.stem.snowball import SnowballStemmer
 
 # ========================================
@@ -50,19 +48,20 @@ def w2vPreprocess(model, w):
 # ========================================
 # MODEL SINGLETON
 
-w2v_model = None
 
+class ModelSingleton:
+    """Word2Vec model singleton."""
 
-def getW2vModel():
-    global w2v_model
-    if not w2v_model:
-        print("loading w2v model")
-        # w2v_model = gensim.models.KeyedVectors.load_word2vec_format(
-        #     "GoogleNews-vectors-negative300.bin", binary=True, limit=500000
-        # )
-        w2v_model = api.load("word2vec-google-news-300")
+    _instance: Optional[KeyedVectors] = None
 
-    return w2v_model
+    @classmethod
+    def get_model(cls) -> KeyedVectors:
+        if not cls._instance:
+            print("loading w2v model")
+            cls._instance = gensim.models.KeyedVectors.load_word2vec_format(
+                "GoogleNews-vectors-negative300.bin", binary=True, limit=500000
+            )
+        return cls._instance
 
 
 # ========================================
@@ -145,7 +144,7 @@ class RandomGuesser(Guesser):
 class W2VGuesser(Guesser):
     def __init__(self):
         super().__init__()
-        self.model = getW2vModel()
+        self.model = ModelSingleton.get_model()
 
     def getSimilarity(self, a, b):
         return self.model.similarity(a, b)
@@ -190,7 +189,7 @@ class Assoc:
 class W2VAssoc(Assoc):
     def __init__(self):
         super().__init__()
-        self.model = getW2vModel()
+        self.model = ModelSingleton.get_model()
 
     def getAssocs(self, pos, neg, topn):
         # print("W2V",pos,neg)

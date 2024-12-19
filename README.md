@@ -20,16 +20,24 @@ If you prefer, you can set up a Conda environment. Python 3.11 is recommended.
 pip install -r requirements.txt
 ```
 
-## Project Structure
-```text
-codenames-ai-client/
-├── codenames_client/      # Main package directory
-│   ├── client.py         # WebSocket client implementation
-│   └── ai.py             # Base AI class definition
-├── examples/             # Example implementations
-│   └── simple_ai.py      # Basic AI implementation
-└── tests/               # Test directory
+## Set up Word2Vec AI
+1. Download `GoogleNews-vectors-negative300.bin`
+```bash
+curl -L -o ~/Downloads/googlenewsvectorsnegative300.zip\
+  https://www.kaggle.com/api/v1/datasets/download/leadbest/googlenewsvectorsnegative300
+unzip ~/Downloads/googlenewsvectorsnegative300.zip
 ```
+2. Move `GoogleNews-vectors-negative300.bin` to `/client` folder
+
+You can delete `GoogleNews-vectors-negative300.bin.gz`
+
+3. Run client with Word2Vec AI spymaster
+From the project root directory
+```bash
+python client.py <GAME_ID> <TEAM>
+```
+TEAM must be either 'red' or 'blue'\
+Example: `python client.py ABCD red`
 
 ## Creating Your AI Agent
 1. Create a new Python file for your AI agent

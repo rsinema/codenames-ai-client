@@ -3,7 +3,7 @@
 from random import randint, sample, seed, shuffle
 from sys import argv
 
-from client.ai import Spymaster, W2VAssoc
+from ai import Spymaster, W2VAssoc
 
 row_col = 5
 BOARD_SIZE = row_col**2
