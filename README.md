@@ -15,12 +15,12 @@ source venv/bin/activate
 ```
 If you prefer, you can set up a Conda environment. Python 3.11 is recommended.
 
-3. Install dependencies:
+3. Install the package in editable mode:
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-## Set up Word2Vec AI
+## Using Word2Vec Agent
 1. Download `GoogleNews-vectors-negative300.bin`
 ```bash
 curl -L -o ~/Downloads/googlenewsvectorsnegative300.zip\
@@ -39,67 +39,118 @@ python client.py <GAME_ID> <TEAM>
 TEAM must be either 'red' or 'blue'\
 Example: `python client.py ABCD red`
 
-## Creating Your AI Agent
-1. Create a new Python file for your AI agent
-2. Import the base AI class:
+# Creating Codenames AI Agents
 
+This guide will help you create your own AI agent for playing Codenames.
+
+## Getting Started
+
+1. Create a new file in the `agents` directory (e.g., `my_agent.py`)
+2. Import the required base classes:
 ```python
-from codenames_client.ai import BaseAI
-
-class MyCodenamesAI(BaseAI):
-    def generate_clue(self, game_state):
-        # Your AI logic here
-        return clue, number
+from base.assoc import Assoc
+from base.constants import Team
+from base.spymaster import BaseSpymaster
 ```
 
-## Game State Format
-The game state provided to your AI will be a dictionary containing:
-```python
-{
-    "board": [
-        {"word": "WORD1", "type": "RED"},
-        {"word": "WORD2", "type": "BLUE"},
-        # ... more words
-    ],
-    "team": "RED",  # Your team color
-    "remaining_words": {
-        "RED": 8,   # Number of red words left
-        "BLUE": 7   # Number of blue words left
-    }
-}
-```
+## Implementing Your Agent
 
-### Word Types
-- "RED": Red team's words 
-- "BLUE": Blue team's words 
-- "NEUTRAL": Neutral words 
-- "ASSASSIN": Game-ending assassin word
+You need to implement two classes:
 
-## Example Implementation
+### 1. Word Association Class
+
+Inherit from `Assoc` and implement these methods:
+
 ```python
-class SimpleAI(BaseAI):
-    def generate_clue(self, game_state):
-        # Find all friendly words
-        friendly_words = [
-            word["word"] for word in game_state["board"] 
-            if word["type"] == game_state["team"]
-        ]
+class MyAssoc(Assoc):
+    def __init__(self):
+        super().__init__()
+        # Initialize your model/embeddings/data here
+    
+    def getAssocs(self, pos, neg, topn):
+        """
+        Find words associated with positive words but not negative words.
         
-        # Simple example: return first word with count 1
-        return friendly_words[0].lower(), 1
+        Args:
+            pos: List of words to associate with
+            neg: List of words to avoid
+            topn: Number of associations to return
+            
+        Returns:
+            List of (word, score) tuples
+        """
+        pass
+
+    def preprocess(self, w):
+        """
+        Preprocess words before looking up associations.
+        
+        Args:
+            w: Input word
+            
+        Returns:
+            Processed word
+        """
+        pass
 ```
 
-## Testing Your AI
-Run your AI against the game server:
-```bash
-python your_ai_file.py --host localhost --port 8765
+### 2. Spymaster Class
+
+Inherit from `BaseSpymaster` and implement the clue generation:
+
+```python
+class MySpymaster(BaseSpymaster):
+    def __init__(self, assoc):
+        super().__init__(assoc)
+    
+    def makeClue(self, board, team: Team):
+        """
+        Generate a clue for your team.
+        
+        Args:
+            board: Dictionary with keys:
+                'R': List of red team's words
+                'U': List of blue team's words
+                'N': List of neutral words
+                'A': List of assassin words
+                'team': Team.RED or Team.BLUE
+            
+        Returns:
+            tuple: ((clue_word, number_of_words), debug_info)
+        """
+        pass
 ```
 
-## Development Guidelines
-1. Your AI must implement the `generate_clue` method
-2. Return format: `(clue: str, count: int)`
-3. Clues must be single words (no spaces)
-4. Numbers and proper nouns are not allowed
+## Using Your Agent
+
+Update `client.py` to use your agent:
+
+```python
+from agents.my_agent import MyAssoc, MySpymaster
+
+def getAI():
+    return MySpymaster(MyAssoc())
+```
+
+## Example Approaches
+
+1. **Word Embeddings**: Use models like Word2Vec, GloVe, or BERT to find semantically similar words
+2. **Language Models**: Use GPT or other LLMs to generate associations
+3. **Knowledge Graphs**: Use ConceptNet or WordNet to find related concepts
+4. **Custom Datasets**: Create your own word association database
+
+## Tips
+
+1. Use the `utils.helpers.isValid()` function to check if your clue is valid
+2. Test your agent with different board configurations
+3. Consider both positive and negative associations
+4. Remember that clues must be:
+   - Single English words
+   - Not derivatives of board words
+   - Not proper nouns
+   - Not acronyms
+
+See `agents/word2vec.py` for a complete example implementation using Word2Vec embeddings.
 
 ## Contributing
 1. Fork the repository

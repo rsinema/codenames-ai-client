@@ -5,7 +5,7 @@ import requests
 import socketio
 from socketio.exceptions import TimeoutError
 
-from ai import getAI
+from agents.word2vec import W2VAssoc, W2VSpymaster
 
 # Game Constants
 BOARD_SIZE = 25
@@ -69,6 +69,12 @@ def play_game(sio: socketio.SimpleClient, code: str, team: str, ai) -> None:
                 break
         except TimeoutError:
             pass
+
+
+# ** Instantiate your AI here! ********
+def getAI():
+    """Entry point for the game engine to get an AI agent."""
+    return W2VSpymaster(W2VAssoc())
 
 
 def main():

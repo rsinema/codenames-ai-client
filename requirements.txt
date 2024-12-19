@@ -1,5 +1,0 @@
-requests
-gensim
-nltk
-numpy
-python-socketio[client]
