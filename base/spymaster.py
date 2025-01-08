@@ -1,25 +1,33 @@
 from .constants import Team
 
 
-class SpymasterCombo:
-    def __init__(self):
-        self.scores = []
-        self.max_clue = None
-        self.max_sim = -9999
-
-    def addOption(self, clue, sim):
-        self.scores.append(sim)
-        if self.max_sim < sim:
-            self.max_sim = sim
-            self.max_clue = clue
-
-    def getAvgSim(self):
-        return sum(self.scores) / len(self.scores)
-
-
 class BaseSpymaster:
     def __init__(self, assoc):
         self.assoc = assoc
 
     def makeClue(self, board, team: Team):
+        """Generate a clue for the current game state.
+
+        This method should analyze the game board and generate a clue that helps
+        the team identify their remaining words while avoiding opponent's words,
+        neutral words, and the assassin.
+
+        Args:
+            board (dict): Game board state with keys 'U' (blue team words),
+                         'R' (red team words), 'N' (neutral words), and
+                         'A' (assassin word). Each key maps to a list of words.
+            team (Team): Enum indicating which team (BLUE/RED) the spymaster is playing
+                        for.
+
+        Returns:
+            tuple: A pair containing:
+                - tuple: (clue_word: str, num_words: int) where clue_word is the
+                        generated clue and num_words is how many words it relates to
+                - tuple: The combination of board words this clue is targeting
+                        (implementation specific, can be None)
+
+        Raises:
+            NotImplementedError: This is an abstract method that must be implemented
+                               by concrete spymaster classes.
+        """
         raise NotImplementedError
