@@ -6,10 +6,11 @@ import socketio
 from socketio.exceptions import TimeoutError
 
 from agents.word2vec import W2VAssoc, W2VSpymaster
+from base.constants import Team
 
 # Game Constants
 BOARD_SIZE = 25
-VALID_TEAMS = ["red", "blue"]
+VALID_TEAMS = [team.name.lower() for team in Team]
 
 # Server Configuration
 SERVER_URL = "https://mind.cs.byu.edu"
@@ -31,8 +32,8 @@ def create_board(state: Dict) -> Dict[str, List[str]]:
     return board
 
 
-def make_clue(ai, board: Dict[str, List[str]], code: str, team: str) -> Dict:
-    clue, intended_words = ai.makeClue(board, team == "blue")
+def make_clue(ai, board: Dict[str, List[str]], code: str, team: Team) -> Dict:
+    clue, intended_words = ai.makeClue(board, team)
     print(f"Clue: {clue}")
     print("Intended words:", *intended_words, sep="\n\t")
 
@@ -41,7 +42,7 @@ def make_clue(ai, board: Dict[str, List[str]], code: str, team: str) -> Dict:
         json={
             "orig": "py",
             "code": code,
-            "team": team,
+            "team": team.name.lower(),
             "word": clue[0],
             "number": clue[1],
         },
@@ -55,7 +56,9 @@ def play_game(sio: socketio.SimpleClient, code: str, team: str, ai) -> None:
         raise ValueError(f"Game error: {state['error']}")
 
     while True:
-        if state["curr_turn"] == team and is_empty_clue(state["curr_clue"]):
+        if Team[state["curr_turn"].upper()] == team and is_empty_clue(
+            state["curr_clue"]
+        ):
             state = make_clue(ai, create_board(state), code, team)
 
         try:
@@ -82,7 +85,7 @@ def main():
         print("Usage: <game code> <'red' | 'blue'>")
         return 1
 
-    code, team = argv[1], argv[2].lower()
+    code, team = argv[1], Team[argv[2].upper()]
     ai = getAI()
 
     with socketio.SimpleClient() as sio:
