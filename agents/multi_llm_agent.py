@@ -30,30 +30,20 @@ class MyAssoc(Assoc):
 from mlx_lm import load, generate
 
 class MultiLLMSpymaster(BaseSpymaster):
-    def __init__(self, assoc, model_name='Qwen/Qwen2-7B-Instruct-MLX', base_url="http://localhost:8181/v1"):
+    def __init__(self, assoc, base_url="http://localhost:8181/v1"):
         super().__init__(assoc)
-        # self.device = self._get_device()
-        # self.model_name = model_name
-        # print(f"Using model: {self.model_name} on device: {self.device}")
-
-        # # Load model and tokenizer
-        # model, tokenizer = load('Qwen/Qwen2-7B-Instruct-MLX', tokenizer_config={"eos_token": "<|im_end|>"})
-        
-        # self.model = model
-        # self.tokenizer = tokenizer
-        # print("model loaded")
-
         self.client = OpenAI(
-            base_url=base_url,  # Update port if needed
+            base_url=base_url,
             api_key="dummy",  # API key is required but not used by llama.cpp
         )
 
         self.my_team_words = None
+        self.words_to_avoid = None
         self.assassin_word = None
 
-        self.subset_size = 4
+        self.subset_size = 6
         self.subset = None
-        self.nlp = spacy.load('en_core_web_lg')
+        self.nlp = spacy.load('en_core_web_lg') # this is used for the word embeddings
 
 
     def _get_device(self):
@@ -110,29 +100,30 @@ class MultiLLMSpymaster(BaseSpymaster):
         self.assassin_word = assassin_word
 
         words_to_avoid = other_team_words + neutral_words + assassin_word
+        self.words_to_avoid = words_to_avoid
 
         self.my_team_words = my_team_words
         self._semantic_grouping()
 
-        # prompt = f'''
-        # You are the spymaster for your team. You need to give a single word clue and a number to your team to help them guess the words associated with your team.\n
-        # Think creatively and logically and give a clue that is associated with as many of your team's words as possible.\n
-        # Here is your team's words: {my_team_words}\n
-        # Here are the words that you must avoid: {words_to_avoid}\n
-        # You are not allowed to use the words on the board as clues, or derivates of the words on the board.\n
-        # You are only allowed to give a single word clue.\n
-        # After the clue, you will need to provide the number of words that the clue is associated with.\n
-        # Here is an example of how you should provide the clue:\n\n
-        # """\n
-        # Clue: Apple 3\n
-        # """\n
-        # ''']
-        self._get_word_subset()
-        shuffle(self.subset)
-
-
         prompt = f'''
-        You are playing Codenames as the Spymaster. Your goal is to help your team win by giving effective clues.
+        You are playing Codenames as the Spymaster. Your goal is to help your team win by giving effective clues that connect multiple words.
+
+        YOUR TEAM'S WORDS: {self.my_team_words}
+        WORDS TO AVOID: {words_to_avoid}
+
+        THINKING PROCESS (REQUIRED):
+        1. First, examine ALL your team's words and identify potential thematic groups or relationships. Be creative!
+        2. Look for words that share:
+            - Category relationships (e.g., both are food items)
+            - Function relationships (e.g., both are used for cleaning)
+            - Conceptual relationships (e.g., both relate to speed)
+        3. Prioritize groups of 2-3 words over single-word connections
+        4. Double-check that your clue doesn't relate to any words in WORDS TO AVOID
+
+        SCORING PRIORITIES:
+        1. MAXIMIZE CONNECTIONS: Your primary goal is finding clues that link 2-4 team words
+        2. CLARITY: Connections should be obvious to human players
+        3. SAFETY: Avoid ANY possible connection to words in WORDS TO AVOID
 
         RULES:
         - Provide exactly ONE word and ONE number
@@ -141,16 +132,9 @@ class MultiLLMSpymaster(BaseSpymaster):
         - FORBIDDEN: Proper nouns, hyphenated words, or compound words
         - FORBIDDEN: Using words that relate to the opposing team's words
 
-        YOUR TEAM'S WORDS: {self.subset}
-        WORDS TO AVOID: {words_to_avoid}
-
-        SCORING PRIORITIES:
-        1. Link as many team words as possible with a single clue, without connecting to opponent words. (2-3 is a good target)
-        2. Avoid any connection to words in WORDS TO AVOID
-        3. Make connections that will be clear to human players
-
         REQUIRED OUTPUT FORMAT:
         Clue: <word> <number>
+        Then, provide a brief explanation of your reasoning for the new clue.
         '''
 
 
@@ -164,20 +148,6 @@ class MultiLLMSpymaster(BaseSpymaster):
 
         words_to_avoid = other_team_words + neutral_words + assassin_word
 
-        # prompt = f'''
-        # You are a master codebreaker. You need to critique the clue given by the spymaster to help your team guess the words associated with your team.\n
-        # Here is the clue given by the spymaster: {clue}\n
-        # Think critically and provide feedback on how the clue is associated with the words on the board.\n
-        # You are only allowed to critique the clue given by the spymaster.\n
-        # Here is the logic you should follow:\n
-        # If you think the clue will possibly lead to the assassin word "{assassin_word}", you should say so.\n
-        # If you think the clue is associated with any of the words for the other team here [{other_team_words}], say so.\n
-        # If you think the clue is good, say PASS.\n
-        # If you think the clue is bad, say FAIL.\n
-        # Here are examples of how you should critique the clue:\n\n
-        # '''
-
-
         prompt = f'''
         You are an expert Codenames judge evaluating the safety and effectiveness of Spymaster clues.
         The clue is a single word and a number of words that it relates to.
@@ -187,7 +157,7 @@ class MultiLLMSpymaster(BaseSpymaster):
         CRITICAL EVALUATION CRITERIA:
         1. ASSASSIN RISK: Check if clue could lead to assassin word "{assassin_word}"
         2. OPPONENT WORDS: Check for connections to opponent words: {other_team_words}
-        3. CLARITY: Evaluate if the clue has clear, logical connections to my team's words: {self.subset}
+        3. CLARITY: Evaluate if the clue has clear, logical connections to my team's words: {self.my_team_words}
         4. EFFICIENCY: Assess if the number given matches reasonable word associations to my team's words
 
         REQUIRED OUTPUT FORMAT:
@@ -198,17 +168,17 @@ class MultiLLMSpymaster(BaseSpymaster):
 
         Example outputs:
 
-        "FAIL
-        - Dangerous association with assassin word 'POISON'
-        - Could also connect to opponent's word 'MEDICINE'
-        - Recommend choosing a different semantic field"
+        FAIL
+        - Dangerous association with assassin word '{assassin_word}'
+        - Could also connect to opponent's word '{other_team_words[0]}'
+        - Recommend choosing a different semantic field
 
-        "PASS
+        PASS
         - Clear connection to target words
         - No risky associations detected
-        - Good numerical assessment"
+        - Good numerical assessment
 
-        IMPORTANT: Always prioritize safety (avoiding assassin/opponent words) over clue effectiveness.
+        IMPORTANT: Always prioritize safety (avoiding assassin/opponent words) over clue effectiveness, but do not make connections to the assassin word that are far stretched.
         '''
 
         return prompt
@@ -224,9 +194,26 @@ class MultiLLMSpymaster(BaseSpymaster):
         shuffle(my_team_words)
 
         prompt = f'''
-        You are playing Codenames as the Spymaster. Your goal is to help your team win by giving effective clues.
+        You are playing Codenames as the Spymaster. Your goal is to help your team win by giving effective clues that connect multiple words.
         You have already given a clue: {clue}
         But a expert codebreaker has critiqued your clue and found it to be dangerous. You need to provide a new clue.\n
+
+        YOUR TEAM'S WORDS: {self.my_team_words}
+        WORDS TO AVOID: {words_to_avoid}
+
+        THINKING PROCESS (REQUIRED):
+        1. First, examine ALL your team's words and identify potential thematic groups or relationships
+        2. Look for words that share:
+            - Category relationships (e.g., both are food items)
+            - Function relationships (e.g., both are used for cleaning)
+            - Conceptual relationships (e.g., both relate to speed)
+        3. Prioritize groups of 2-3 words over single-word connections
+        4. Double-check that your clue doesn't relate to any words in WORDS TO AVOID
+
+        SCORING PRIORITIES:
+        1. MAXIMIZE CONNECTIONS: Your primary goal is finding clues that link 2-4 team words
+        2. CLARITY: Connections should be obvious to human players
+        3. SAFETY: Avoid ANY possible connection to words in WORDS TO AVOID
 
         RULES:
         - Provide exactly ONE word and ONE number
@@ -235,16 +222,9 @@ class MultiLLMSpymaster(BaseSpymaster):
         - FORBIDDEN: Proper nouns, hyphenated words, or compound words
         - FORBIDDEN: Using words that relate to the opposing team's words
 
-        YOUR TEAM'S WORDS: {self.subset}
-        WORDS TO AVOID: {words_to_avoid}
-
-        SCORING PRIORITIES:
-        1. Link as many team words as possible with a single clue
-        2. Avoid any connection to words in WORDS TO AVOID
-        3. Make connections that will be clear to human players
-
         REQUIRED OUTPUT FORMAT:
         Clue: <word> <number>
+        Then, provide a brief explanation of your reasoning for the new clue.
         '''
         return prompt
     
@@ -259,9 +239,26 @@ class MultiLLMSpymaster(BaseSpymaster):
         shuffle(my_team_words)
 
         prompt = f'''
-        You are playing Codenames as the Spymaster. Your goal is to help your team win by giving effective clues.
+        You are playing Codenames as the Spymaster. Your goal is to help your team win by giving effective clues that connect multiple words.
         You have already given a clue: {clue}
         But the clue is not valid. You need to provide a new clue.\n
+
+        YOUR TEAM'S WORDS: {self.my_team_words}
+        WORDS TO AVOID: {words_to_avoid}
+
+        THINKING PROCESS (REQUIRED):
+        1. First, examine ALL your team's words and identify potential thematic groups or relationships
+        2. Look for words that share:
+            - Category relationships (e.g., both are food items)
+            - Function relationships (e.g., both are used for cleaning)
+            - Conceptual relationships (e.g., both relate to speed)
+        3. Prioritize groups of 2-3 words over single-word connections
+        4. Double-check that your clue doesn't relate to any words in WORDS TO AVOID
+
+        SCORING PRIORITIES:
+        1. MAXIMIZE CONNECTIONS: Your primary goal is finding clues that link 2-4 team words
+        2. CLARITY: Connections should be obvious to human players
+        3. SAFETY: Avoid ANY possible connection to words in WORDS TO AVOID
 
         RULES:
         - Provide exactly ONE word and ONE number
@@ -270,33 +267,38 @@ class MultiLLMSpymaster(BaseSpymaster):
         - FORBIDDEN: Proper nouns, hyphenated words, or compound words
         - FORBIDDEN: Using words that relate to the opposing team's words
 
-        YOUR TEAM'S WORDS: {self.subset}
-        WORDS TO AVOID: {words_to_avoid}
-
-        SCORING PRIORITIES:
-        1. Link as many team words as possible with a single clue
-        2. Avoid any connection to words in WORDS TO AVOID
-        3. Make connections that will be clear to human players
-
         REQUIRED OUTPUT FORMAT:
         Clue: <word> <number>
+        Then, provide a brief explanation of your reasoning for the new clue.
         '''
         return prompt
+    
+    def _get_final_prompt(self, board, team: Team, clue):
+
+        prompt = f'''
+        You are playing Codenames as the Spymaster. Your goal is to give a simple, clear clue for at least one of your team's words.
+
+        RULES:
+        - Provide exactly ONE word and ONE number
+        - FORBIDDEN: Using any word (or variation) that appears on the board
+        - FORBIDDEN: Proper nouns, hyphenated words, or compound words
+
+        YOUR TEAM'S WORDS: {self.my_team_words[0]}
+        WORDS TO AVOID: {self.words_to_avoid}
+
+        INSTRUCTIONS:
+        1. Pick the EASIEST word from YOUR TEAM'S WORDS to give a clue for
+        2. Choose a simple, obvious association for that word
+        3. Verify your clue doesn't connect to any WORDS TO AVOID
+        4. Use "1" as your number since you're targeting one word
+
+        REQUIRED OUTPUT FORMAT:
+        Clue: <word> 1
+        '''
 
     def _generate(self, prompt, max_tokens=50, temperature=0.8, stop=None):
-        # mlx-lm generation
-        # messages = [
-        #     {"role": "system", "content": prompt},
-        # ]
-        # text = self.tokenizer.apply_chat_template(
-        #     messages,
-        #     tokenize=False,
-        #     add_generation_prompt=True
-        # )
-        # response = generate(self.model, self.tokenizer, prompt=text, verbose=True)
-
         response = self.client.chat.completions.create(
-            model="local_model",  # Model name doesn't matter for llama.cpp
+            model="local_model",
             messages=[
                 {"role": "system", "content": prompt},
             ],
@@ -308,30 +310,75 @@ class MultiLLMSpymaster(BaseSpymaster):
         return response.choices[0].message.content
 
     def _parse_clue(self, clue_string):
-        # Parse the clue string
-        resp_arr = clue_string.split('\n')
-        for line in resp_arr:
-            if "Clue" in line:
-                clue_parts = line.split()
-                clue_word = clue_parts[1]
-                number_of_words = clue_parts[2]
-                break
-        if not clue_word:
-            raise ValueError("Clue word not found in response")
-        if not number_of_words:
-            raise ValueError("Number of words not found in response")
-        
-        return (clue_word, number_of_words)
+        """Parse clue with enhanced error handling"""
+        try:
+            # Handle empty or None responses
+            if not clue_string or clue_string.strip() == "":
+                raise ValueError("Empty response received")
+
+            # Look for "Clue:" in any case
+            resp_arr = clue_string.split('\n')
+            clue_word = None
+            number_of_words = None
+
+            for line in resp_arr:
+                if "clue" in line.lower():
+                    # Remove any punctuation and split
+                    parts = line.replace(":", " ").split()
+                    # Find index of "clue" and get following elements
+                    try:
+                        clue_index = [i for i, part in enumerate(parts) if "clue" in part.lower()][0]
+                        if len(parts) > clue_index + 2:
+                            clue_word = parts[clue_index + 1]
+                            number_of_words = parts[clue_index + 2]
+                    except IndexError:
+                        continue
+
+            if not clue_word or not number_of_words:
+                raise ValueError(f"Invalid clue format: {clue_string}")
+
+            # Validate number_of_words is numeric
+            if not number_of_words.isdigit():
+                raise ValueError(f"Invalid number format: {number_of_words}")
+
+            # Basic word validation
+            if not clue_word.isalpha():
+                raise ValueError(f"Invalid word format: {clue_word}")
+
+            return (clue_word.lower(), number_of_words)
+
+        except Exception as e:
+            print(f"Error parsing clue: {str(e)}")
+            return None, None
     
     def _parse_critique(self, critique_string):
-        # Parse the critique string
-        resp_arr = critique_string.split('\n')
-        for line in resp_arr:
-            if "FAIL" in line:
-                print(line)
+        """Parse critique with enhanced error handling"""
+        try:
+            if not critique_string or critique_string.strip() == "":
+                print("Empty critique received")
                 return False
-        
-        return True
+
+            # Split into lines and look for PASS/FAIL
+            resp_arr = critique_string.split('\n')
+            found_decision = False
+
+            for line in resp_arr:
+                line = line.strip().upper()
+                if "FAIL" in line:
+                    return False
+                if "PASS" in line:
+                    found_decision = True
+                    break
+
+            if not found_decision:
+                print("No clear PASS/FAIL found in critique")
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Error parsing critique: {str(e)}")
+            return False
 
     def makeClue(self, board, team: Team):
         """
@@ -345,31 +392,88 @@ class MultiLLMSpymaster(BaseSpymaster):
         Returns:
             tuple: ((clue_word, number_of_words), debug_info)
         """
-        print("Generating clue")
-        clue_string = self._generate(self._get_init_prompt(board, team), temperature=0.3, max_tokens=25)
-        clue_word, number_of_words = self._parse_clue(clue_string)
-        clue = (clue_word, number_of_words)
-        print(f"Clue generated")
+        MAX_ATTEMPTS = 5
+        attempts = 0
+        
+        while attempts < MAX_ATTEMPTS:
+            try:
+                print(f"Generating clue (attempt {attempts + 1}/{MAX_ATTEMPTS})")
+                
+                # Generate initial clue
+                clue_string = self._generate(
+                    self._get_init_prompt(board, team), 
+                    temperature=0.5 + (attempts * 0.2),  # Increase temperature with each attempt
+                    max_tokens=50
+                )
+                
+                # Parse clue
+                clue_word, number_of_words = self._parse_clue(clue_string)
+                print(clue_word, number_of_words)
+                if not clue_word or not number_of_words:
+                    attempts += 1
+                    continue
 
-        print("Generating critique")
-        critique_string = self._generate(self._get_critique_prompt(board, team, clue), temperature=0.5, max_tokens=75)
-        critique = self._parse_critique(critique_string)
-        if not critique:
-            print("Generating second clue")
-            clue_string = self._generate(self._get_second_prompt(board, team, clue))
-            clue_word, number_of_words = self._parse_clue(clue_string)
-            clue = (clue_word, number_of_words)
+                clue = (clue_word, number_of_words)
+                
+                # Generate and check critique
+                print("Generating critique")
+                critique_string = self._generate(
+                    self._get_critique_prompt(board, team, clue),
+                    temperature=0.5,
+                    max_tokens=75
+                )
+
+                print(critique_string)
+                
+                if not self._parse_critique(critique_string):
+                    print("Failed critique, generating new clue")
+                    clue_string = self._generate(
+                        self._get_second_prompt(board, team, clue),
+                        temperature=0.7 + (attempts * 0.1)
+                    )
+                    clue_word, number_of_words = self._parse_clue(clue_string)
+                    if not clue_word or not number_of_words:
+                        attempts += 1
+                        continue
+                    clue = (clue_word, number_of_words)
+                
+                # Validate clue
+                if not isValid(clue_word, set(board['R'] + board['U'] + board['N'] + board['A'])):
+                    print(f"Clue is not valid, generating new clue")
+                    clue_string = self._generate(
+                        self._get_not_valid_prompt(board, team, clue),
+                        temperature=0.9
+                    )
+                    clue_word, number_of_words = self._parse_clue(clue_string)
+                    if not clue_word or not number_of_words:
+                        attempts += 1
+                        continue
+                    clue = (clue_word, number_of_words)
+                    
+                    # Final validation check
+                    if not isValid(clue_word, set(board['R'] + board['U'] + board['N'] + board['A'])):
+                        attempts += 1
+                        continue
+                
+                # If we got here, we have a valid clue
+                return (clue, [f"Words: {self.my_team_words}", f"Assassin word: {self.assassin_word}"])
+                
+            except Exception as e:
+                print(f"Error during clue generation: {str(e)}")
+                attempts += 1
+                
+        # If we've exhausted all attempts, return a safe fallback
+        print("Failed to generate valid clue after maximum attempts")
 
         while not isValid(clue_word, set(board['R'] + board['U'] + board['N'] + board['A'])):
-            print(f"Clue is not valid. Generating new clue")
-            clue_string = self._generate(self._get_not_valid_prompt(board, team, clue), temperature=0.9)
+            clue_string = self._generate(
+                self._get_final_prompt(board, team, clue),
+                temperature=0.9
+            )
             clue_word, number_of_words = self._parse_clue(clue_string)
+            if not clue_word or not number_of_words:
+                continue
             clue = (clue_word, number_of_words)
 
-        return (clue, [f"Subset: {self.subset}", f"Assassin word: {self.assassin_word}"])
+        return (clue, ["Failed to generate valid clue after maximum attempts, returning fallback"])
     
-
-# # instantiate the spymaster for testing
-# assoc = MyAssoc()
-# spymaster = MultiLLMSpymaster(assoc)
-# print(spymaster.makeClue({'R': ['apple', 'banana'], 'U': ['carrot', 'dog'], 'N': ['elephant', 'frog'], 'A': ['gun']}, Team.RED))

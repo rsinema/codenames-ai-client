@@ -1,6 +1,8 @@
 from random import randint, sample, seed, shuffle
 from sys import argv
 
+from agents.mlx_llm_agent import MlxLLMSpymaster
+from agents.multi_llm_agent import MultiLLMSpymaster
 from agents.word2vec import W2VAssoc, W2VSpymaster
 from base.constants import Team
 
@@ -50,7 +52,7 @@ def loadWords(filename="word_list.txt"):
 # ** Instantiate your AI here! ********
 def getAI():
     """Entry point for the game engine to get an AI agent."""
-    return W2VSpymaster(W2VAssoc())
+    return MlxLLMSpymaster(W2VAssoc())
 
 
 # ===============================================
