@@ -45,15 +45,6 @@ class MultiLLMSpymaster(BaseSpymaster):
         self.subset_size = 6
         self.subset = None
         self.nlp = spacy.load('en_core_web_lg') # this is used for the word embeddings
-
-
-    def _get_device(self):
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-        elif torch.cuda.is_available():
-            return torch.device("cuda")
-        else:
-            return torch.device("cpu")
         
     def _get_word_subset(self):
         """
