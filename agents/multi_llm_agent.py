@@ -3,8 +3,6 @@ from base.constants import Team
 from base.spymaster import BaseSpymaster
 from utils.helpers import isValid
 
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-import torch
 from openai import OpenAI
 from random import shuffle
 
@@ -26,8 +24,6 @@ class MyAssoc(Assoc):
     def preprocess(self, w):
         # Implement any word preprocessing
         pass
-
-from mlx_lm import load, generate
 
 class MultiLLMSpymaster(BaseSpymaster):
     def __init__(self, assoc, base_url="http://localhost:8181/v1"):
