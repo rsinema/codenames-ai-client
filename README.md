@@ -1,164 +1,23 @@
-# Codenames AI Client
+# Codenames AI Agent
 
-A Python client for developing AI agents that play Codenames by providing clues based on the current game state.
+This was a project for my Computational Creativity class. The goal was to create a agent that would act as the 'Spymaster' on your team, and would creatively generate clues based on the current gameboard.
 
-## Quick Start
-1. Clone this repository
-```bash
-git clone git@github.com:rmorain/codenames-ai-client.git
-cd codenames-ai-client
-```
-2. Set up a virtual environment
-```bash
-python -m venv venv
-source venv/bin/activate  
-```
-If you prefer, you can set up a Conda environment. Python 3.11 is recommended.
+We had two tournamnets in our class to see whose agent was the most creative, and we approximated 'creativity' with wins (i.e. the most creative agent will make better clues, and thus their team will win more). My agent got me to 3rd place in our class, and it seemed to be somewhat creative in generating clues.
 
-3. Install the package in editable mode:
-```bash
-pip install -e .
-```
+## My Agent
 
-## Using Word2Vec Agent
-1. Download `GoogleNews-vectors-negative300.bin`
-```bash
-curl -L -o ~/Downloads/googlenewsvectorsnegative300.zip\
-  https://www.kaggle.com/api/v1/datasets/download/leadbest/googlenewsvectorsnegative300
-unzip ~/Downloads/googlenewsvectorsnegative300.zip
-```
-2. Move `GoogleNews-vectors-negative300.bin` to the main project folder
+My agent uses a openai API call, I initally used [`llama.cpp`](https://github.com/ggml-org/llama.cpp) to have a server running Llama3.1-8b locally to create the clues. One prompt has the LLM create a clue based on the game state (e.g. our team's words, the other team's, assassin word) which usually output a clue intended for 2-3 words. This clue was then critiqued, which uses a different prompt to see if the clue was effective and wasn't dangerous to the team (it wasn't related to the assassin word). This either passed or failed the clue, if it failed the critique output was used to generate a new clue, which was then critiqued again. Eventually a fall back prompt was created that was made to focus on one word, because I didn't want this iterating too long while we had our tournament in class.
 
-You can delete `GoogleNews-vectors-negative300.bin.gz`
+I attempted to model how I play the game Codenames into a agentic flow. Looking at the board and generating potential clues, checking if those clues could lead to the assassin word or the other teams word, repeat until a clue is sufficiently effective and not dangerous.
 
-3. Run client with Word2Vec AI spymaster
-From the project root directory
-```bash
-python client.py <GAME_ID> <TEAM>
-```
-TEAM must be either 'red' or 'blue'\
-Example: `python client.py ABCD red`
+The code for my agent can be found in [`/agents/multi_llm_agent.py`](https://github.com/rsinema/codenames-ai-client/blob/main/agents/multi_llm_agent.py)
 
-# Creating Codenames AI Agents
+## Augmentation Attempts
 
-This guide will help you create your own AI agent for playing Codenames.
+### Prompt Engineering
 
-## Getting Started
+My inital prompts for the LLM weren't as structured as the prompts that are currently used in agent. The prompt structuring greatly improved the structure of the output from the LLM and also helped the clue quality improve as well.
 
-1. Create a new file in the `agents` directory (e.g., `my_agent.py`)
-2. Import the required base classes:
-```python
-from base.assoc import Assoc
-from base.constants import Team
-from base.spymaster import BaseSpymaster
-```
+### WordNet
 
-## Implementing Your Agent
-
-You need to implement two classes:
-
-### 1. Word Association Class
-
-Inherit from `Assoc` and implement these methods:
-
-```python
-class MyAssoc(Assoc):
-    def __init__(self):
-        super().__init__()
-        # Initialize your model/embeddings/data here
-    
-    def getAssocs(self, pos, neg, topn):
-        """
-        Find words associated with positive words but not negative words.
-        
-        Args:
-            pos: List of words to associate with
-            neg: List of words to avoid
-            topn: Number of associations to return
-            
-        Returns:
-            List of (word, score) tuples
-        """
-        pass
-
-    def preprocess(self, w):
-        """
-        Preprocess words before looking up associations.
-        
-        Args:
-            w: Input word
-            
-        Returns:
-            Processed word
-        """
-        pass
-```
-
-### 2. Spymaster Class
-
-Inherit from `BaseSpymaster` and implement the clue generation:
-
-```python
-class MySpymaster(BaseSpymaster):
-    def __init__(self, assoc):
-        super().__init__(assoc)
-    
-    def makeClue(self, board, team: Team):
-        """
-        Generate a clue for your team.
-        
-        Args:
-            board: Dictionary with keys:
-                'R': List of red team's words
-                'U': List of blue team's words
-                'N': List of neutral words
-                'A': List of assassin words
-                'team': Team.RED or Team.BLUE
-            
-        Returns:
-            tuple: ((clue_word, number_of_words), debug_info)
-        """
-        pass
-```
-
-## Using Your Agent
-
-Update `client.py` to use your agent:
-
-```python
-from agents.my_agent import MyAssoc, MySpymaster
-
-def getAI():
-    return MySpymaster(MyAssoc())
-```
-
-## Example Approaches
-
-1. **Word Embeddings**: Use models like Word2Vec, GloVe, or BERT to find semantically similar words
-2. **Language Models**: Use GPT or other LLMs to generate associations
-3. **Knowledge Graphs**: Use ConceptNet or WordNet to find related concepts
-4. **Custom Datasets**: Create your own word association database
-
-## Tips
-
-1. Use the `utils.helpers.isValid()` function to check if your clue is valid
-2. Test your agent with different board configurations
-3. Consider both positive and negative associations
-4. Remember that clues must be:
-   - Single English words
-   - Not derivatives of board words
-   - Not proper nouns
-   - Not acronyms
-
-See `agents/word2vec.py` for a complete example implementation using Word2Vec embeddings.
-
-## Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-This project is licensed under the MIT License - see the LICENSE file for details.
-
+I attempted to augment the information given to the LLM by using `nltk`'s wordnet to semantically group the words prior to feeding them into the model. This might have marginally improved the clues, but overall prompt engineering and model size were the biggest factors in generating effective clues.

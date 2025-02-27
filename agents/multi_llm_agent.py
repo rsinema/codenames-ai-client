@@ -6,16 +6,140 @@ from utils.helpers import isValid
 from openai import OpenAI
 from random import shuffle
 
-from sklearn.metrics.pairwise import cosine_similarity
-import spacy
-import en_core_web_lg
-import numpy as np
+import nltk
+# check if wordnet is downloaded
+try:
+    wn = nltk.corpus.wordnet
+except LookupError:
+    nltk.download('wordnet')
+    wn = nltk.corpus.wordnet
+from nltk.corpus import wordnet as wn
+from collections import defaultdict
+import networkx as nx
 
-
-class MyAssoc(Assoc):
-    def __init__(self):
+class WordNetAssoc(Assoc):
+    def __init__(self, threshold=0.3):
         super().__init__()
-        # Initialize your model/embedding here
+        self.relationship_weights = {
+            'direct_hypernym': 0.8,
+            'sister_terms': 0.7,
+            'close_hypernym': 0.6,
+            'far_hypernym': 0.3
+        }
+        
+        # Define hypernyms that are too general to be meaningful
+        self.too_general = {
+            'entity.n.01', 'object.n.01', 'whole.n.02', 'artifact.n.01',
+            'instrumentality.n.03', 'unit.n.03', 'matter.n.03',
+            'physical_entity.n.01', 'thing.n.12', 'person.n.01'
+        }
+        self.threshold = threshold
+    
+    def get_relevant_synsets(self, word):
+        """Get relevant synsets for a word, filtering out rare or metaphorical uses."""
+        all_synsets = wn.synsets(word)
+        
+        # If there's only one synset, use it
+        if len(all_synsets) == 1:
+            return all_synsets
+            
+        # Filter out rare or metaphorical uses
+        concrete_synsets = []
+        for synset in all_synsets:
+            # Check if this is a concrete noun sense
+            if synset.pos() == 'n':
+                # Look at hypernym tree to determine if it's concrete
+                hypernyms = set(h.name() for h in synset.closure(lambda s: s.hypernyms()))
+                if ('physical_entity.n.01' in hypernyms or 
+                    'artifact.n.01' in hypernyms or
+                    'living_thing.n.01' in hypernyms):
+                    concrete_synsets.append(synset)
+        
+        return concrete_synsets if concrete_synsets else [all_synsets[0]]
+    
+    def calculate_relationship_strength(self, word1, word2):
+        """Calculate relationship strength between words based on WordNet relationships."""
+        max_strength = 0
+        relationships = []
+        
+        synsets1 = self.get_relevant_synsets(word1)
+        synsets2 = self.get_relevant_synsets(word2)
+        
+        for s1 in synsets1:
+            for s2 in synsets2:
+                strength = 0
+                current_rels = []
+                
+                # Check for sister terms (sharing immediate hypernym)
+                s1_hyper = set(s1.hypernyms())
+                s2_hyper = set(s2.hypernyms())
+                common_direct = s1_hyper.intersection(s2_hyper)
+                
+                valid_common = set()
+                for h in common_direct:
+                    if h.name() not in self.too_general:
+                        valid_common.add(h)
+                
+                if valid_common:
+                    strength += self.relationship_weights['sister_terms']
+                    current_rels.append(('sister_terms', 
+                                       [h.name() for h in valid_common]))
+                
+                # Check common ancestors and their depth
+                s1_all_hyper = set(s1.closure(lambda s: s.hypernyms()))
+                s2_all_hyper = set(s2.closure(lambda s: s.hypernyms()))
+                common_ancestors = s1_all_hyper.intersection(s2_all_hyper)
+                
+                # Filter out too general hypernyms
+                specific_ancestors = {h for h in common_ancestors 
+                                   if h.name() not in self.too_general}
+                
+                if specific_ancestors:
+                    # Get the most specific (deepest) common ancestor
+                    deepest = max(specific_ancestors, key=lambda h: h.max_depth())
+                    depth = deepest.max_depth()
+                    
+                    if depth >= 7:  # Increased depth threshold
+                        strength += self.relationship_weights['close_hypernym']
+                        current_rels.append(('close_hypernym', deepest.name()))
+                    elif depth >= 5:  # Increased depth threshold
+                        strength += self.relationship_weights['far_hypernym']
+                        current_rels.append(('far_hypernym', deepest.name()))
+                
+                # Check direct relationships
+                if (s2 in s1.hypernyms() or s1 in s2.hypernyms()) and \
+                   s2.name() not in self.too_general and s1.name() not in self.too_general:
+                    strength += self.relationship_weights['direct_hypernym']
+                    current_rels.append(('direct_hypernym', 
+                                       f"{s1.name()}->{s2.name()}"))
+                
+                if strength > max_strength:
+                    max_strength = strength
+                    relationships = current_rels
+        
+        return max_strength, relationships
+
+    def cluster_team_words(self, team_words):
+        """Cluster team words based on their weighted relationships."""
+        G = nx.Graph()
+        
+        # Add all words as nodes
+        for word in team_words:
+            G.add_node(word)
+        
+        # Add weighted edges between related words
+        for i, word1 in enumerate(team_words):
+            for word2 in team_words[i+1:]:
+                strength, relationships = self.calculate_relationship_strength(word1, word2)
+                if strength >= self.threshold:
+                    G.add_edge(word1, word2, 
+                             weight=strength, 
+                             relationships=relationships)
+        
+        # Use community detection to find clusters
+        clusters = list(nx.community.louvain_communities(G))
+        
+        return clusters, G
 
     def getAssocs(self, pos, neg, topn):
         # Implement your word association logic
@@ -29,18 +153,20 @@ class MultiLLMSpymaster(BaseSpymaster):
     def __init__(self, assoc, base_url="http://localhost:8181/v1"):
         super().__init__(assoc)
         self.client = OpenAI(
-            base_url=base_url,
-            api_key="dummy",  # API key is required but not used by llama.cpp
+            # base_url=base_url,
+            # api_key="dummy",  # API key is required but not used by llama.cpp
         )
 
         self.my_team_words = None
+        self.clusters = None
+        self.graph = None
+
         self.words_to_avoid = None
         self.assassin_word = None
         self.other_team_words = None
 
         self.subset_size = 6
         self.subset = None
-        self.nlp = spacy.load('en_core_web_lg') # this is used for the word embeddings
         
     def _get_word_subset(self):
         """
@@ -51,33 +177,18 @@ class MultiLLMSpymaster(BaseSpymaster):
         
         subset = self.my_team_words[:actual_size]
         self.subset = subset
-    
-    def _semantic_grouping(self):
-        """Group words based on semantic similarity"""
-        # Get word vectors
-        docs = [self.nlp(word) for word in self.my_team_words]
-        vectors = np.array([doc.vector for doc in docs])
-        
-        # Calculate similarity matrix
-        similarity_matrix = cosine_similarity(vectors)
-        
-        # Group similar words together
-        grouped_indices = []
-        remaining = set(range(len(self.my_team_words)))
-        
-        while remaining:
-            current = remaining.pop()
-            group = [current]
-            
-            # Find similar words
-            for idx in list(remaining):
-                if similarity_matrix[current][idx] > 0.5:  # Adjustable threshold
-                    group.append(idx)
-                    remaining.remove(idx)
-            
-            grouped_indices.extend(group)
-        
-        self.my_team_words = [self.my_team_words[i] for i in grouped_indices]
+
+    def _check_clusters(self):
+        '''
+        Check if there are clusters of size > 2, if not combine clusters to form a new cluster
+        '''
+        cluster_sizes = [len(cluster) for cluster in self.clusters]
+        if max(cluster_sizes) < 2:
+            # combine clusters
+            combined = []
+            for cluster in self.clusters:
+                combined += cluster
+            self.clusters = [combined]
         
     def _get_init_prompt(self, board, team: Team):
         my_team_words = board['R'] if team == Team.RED else board['U']
@@ -93,20 +204,24 @@ class MultiLLMSpymaster(BaseSpymaster):
 
         self.my_team_words = my_team_words
         shuffle(self.my_team_words)
-        self._semantic_grouping()
+        self.clusters, self.graph = self.assoc.cluster_team_words(self.my_team_words)
+        # sort the clusters by size
+        self.clusters = sorted(self.clusters, key=lambda x: len(x), reverse=True)
+        self._check_clusters()
 
         prompt = f'''
         You are playing Codenames as the Spymaster. Your goal is to help your team win by giving effective clues that connect multiple words.
 
         INSTRUCTIONS:
-        1. First, examine ALL your team's words and identify potential thematic groups or relationships. Be creative!
-            - YOUR TEAM'S WORDS: {self.my_team_words}
+        1. First, examine your team's words and identify potential thematic groups or relationships. Be creative!
+            - YOUR TEAM'S WORDS: {self.clusters[0]}
         2. Look for words that share:
             - Category relationships (e.g., both are food items)
             - Function relationships (e.g., both are used for cleaning)
             - Conceptual relationships (e.g., both relate to speed)
         3. Prioritize groups of 2-3 words over single-word connections
         4. Double-check that your clue doesn't relate to any words in WORDS TO AVOID: {self.words_to_avoid}
+        5. Check that your word is not in your team's words or words to avoid
 
         RULES:
         - Provide exactly ONE word and ONE number
@@ -118,7 +233,6 @@ class MultiLLMSpymaster(BaseSpymaster):
         REQUIRED OUTPUT FORMAT:
         Clue: <word> <number>
         '''
-
 
         return prompt
     
@@ -236,11 +350,12 @@ class MultiLLMSpymaster(BaseSpymaster):
         REQUIRED OUTPUT FORMAT:
         Clue: <word> 1
         '''
+
         return prompt
 
     def _generate(self, prompt, max_tokens=100, temperature=0.8, stop=None):
         response = self.client.chat.completions.create(
-            model="local_model",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt},
             ],
@@ -340,6 +455,7 @@ class MultiLLMSpymaster(BaseSpymaster):
         Returns:
             tuple: ((clue_word, number_of_words), debug_info)
         """
+
         MAX_ATTEMPTS = 3
         attempts = 0
         

@@ -8,11 +8,6 @@ import torch
 from openai import OpenAI
 from random import shuffle
 
-from sklearn.metrics.pairwise import cosine_similarity
-import spacy
-import en_core_web_lg
-import numpy as np
-
 
 class MyAssoc(Assoc):
     def __init__(self):
@@ -48,7 +43,6 @@ class MlxLLMSpymaster(BaseSpymaster):
 
         self.subset_size = 4
         self.subset = None
-        self.nlp = spacy.load('en_core_web_lg')
 
 
     def _get_device(self):
@@ -68,33 +62,6 @@ class MlxLLMSpymaster(BaseSpymaster):
         
         subset = self.my_team_words[:actual_size]
         self.subset = subset
-    
-    def _semantic_grouping(self):
-        """Group words based on semantic similarity"""
-        # Get word vectors
-        docs = [self.nlp(word) for word in self.my_team_words]
-        vectors = np.array([doc.vector for doc in docs])
-        
-        # Calculate similarity matrix
-        similarity_matrix = cosine_similarity(vectors)
-        
-        # Group similar words together
-        grouped_indices = []
-        remaining = set(range(len(self.my_team_words)))
-        
-        while remaining:
-            current = remaining.pop()
-            group = [current]
-            
-            # Find similar words
-            for idx in list(remaining):
-                if similarity_matrix[current][idx] > 0.3:  # Adjustable threshold
-                    group.append(idx)
-                    remaining.remove(idx)
-            
-            grouped_indices.extend(group)
-        
-        self.my_team_words = [self.my_team_words[i] for i in grouped_indices]
         
     def _get_init_prompt(self, board, team: Team):
         my_team_words = board['R'] if team == Team.RED else board['U']
@@ -107,7 +74,6 @@ class MlxLLMSpymaster(BaseSpymaster):
         words_to_avoid = other_team_words + neutral_words + assassin_word
 
         self.my_team_words = my_team_words
-        self._semantic_grouping()
         # self._get_word_subset()
         # shuffle(self.subset)
 
